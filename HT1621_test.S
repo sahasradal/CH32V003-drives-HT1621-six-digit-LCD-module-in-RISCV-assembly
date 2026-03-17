@@ -7,10 +7,16 @@
 #.\riscv32-unknown-elf-objcopy -O ihex a.out HT1621_test.hex
 
 
+#PC3 - CS   (HT1621 LCD)
+#PC4 - WR	(HT1621 LCD)
+#PC5 - DATA (HT1621 LCD)
+# basic code to initialise and print digit 8 at LHS end or address 0.
+
+
+
 .equ SRAM_start, 0x20000000
 .equ SRAM_end, 0x20000800
 .equ STACK, 0x20000800
-
 .equ TIM2_BASE, 0x40000000
 .equ W_WDG_BASE, 0x40002C00
 .equ I_WDG_BASE, 0x40003000
@@ -275,16 +281,8 @@
 .equ  SYSTICK_CTLR_STCLK, (1<<2)
 .equ  SYSTICK_CTLR_STRE,  (1<<3)
 .equ  SYSTICK_CTLR_SWIE, (1<<31) 
-
-.equ data_command2 , 0x0d               #0b00001101# data control nibble , 1101  = 0x0D   - EN goes hi=1
-.equ data_command3 , 0xf9		#0b00001001# data control nibble , 1011  = 0x0B   - EN goes low=0
-.equ inst_command2 , 0x0C               #0b00001100# instruction control nibble ,  led on,EN hi , rs/RW 0    = 1100   = 0x0C
-.equ inst_command3 , 0xf8		#0b00001000# instruction control nibble  , led on, EN lo ,rs/rw 0    = 1000   = 0x08
-.equ LCDWAD , 0x4E 			# 1602 LCD address
-
-.equ Kp, 0x00008000      		# 0.5 × 65536
-.equ Ki, 0x00000CCD      		# 0.05 × 65536
-.equ Kd, 0x0000199A      		# 0.1 × 65536
+#################################
+# SRAM VARIABLES
 ###############################
 .equ buffer,   0x20000004
 .equ buffer1,  0x20000008
@@ -310,11 +308,9 @@
 .equ mem,0x20000060
 
 
-
-
-
-
-
+#################################
+# MACROS
+#################################
 
 .macro push val
   addi sp, sp, -4
@@ -326,26 +322,6 @@
   addi sp, sp, 4
 .endm
 
-.macro pos x y
-  addi sp,sp,-8
-  sw x6,0(sp)
-  sw x7,4(sp)
-  li x6,\y
-  li x7,\x
-  call posi
-  lw x7,4(sp)
-  lw x6,0(sp)
-  addi sp,sp,8
-.endm
-
-.macro string address
-  addi sp,sp,-4
-  sw a2,0(sp)
-  la a2,\address
-  call string_reader
-  lw a2,0(sp)
-  addi sp,sp,4
-.endm
 
 .macro micros val
   addi sp,sp,-4
@@ -446,7 +422,7 @@ start:
     	csrrw zero, mtvec,t0		# write t0 mtvec
    	la t0,main
 	csrw	mepc,t0
-          				#csrw	mepc,t0 :mepc updated with address of main
+          						#csrw	mepc,t0 :mepc updated with address of main
 	mret
 
   
@@ -457,19 +433,19 @@ main:
 
 #Enable GPIO clocks & AFIO in APB2 clock register
         
-    	la x10,R32_RCC_APB2PCENR	# load address of APB2PCENR register to x10 ,for enabling GPIO A,D,C peripherals
-	lw x11,0(x10)			# load contents from peripheral register R32_RCC_APB2PCENR pointed by x10
+    la x10,R32_RCC_APB2PCENR	# load address of APB2PCENR register to x10 ,for enabling GPIO A,D,C peripherals
+	lw x11,0(x10)				# load contents from peripheral register R32_RCC_APB2PCENR pointed by x10
 	li x7,((1<<2)|(1<<4)|(1<<5)|(1<<0)|(1<<14)|(1<<9)|(1<<11))	# 1<<IOPA_EN,1<<IOPC_EN,1<<IOPD_EN,1<<AFIOEN,1<<USART ,1<<ADC enable port A,C,D and AFIO functions,1<<TIM1
-	or x11,x11,x7			# or values 
-	sw x11,0(x10)			# store modified enable values in R32_RCC_APB2PCENR
+	or x11,x11,x7				# or values 
+	sw x11,0(x10)				# store modified enable values in R32_RCC_APB2PCENR
 	la x10,R32_RCC_APB1PCENR
 	lw x11,0(x10)
-	ori x11,x11,(1<<0)		# timer2 clock enable
+	ori x11,x11,(1<<0)			# timer2 clock enable
 	sw x11,0(x10)
 
 
 #configure GPIO PortC as multiplex open drain output for I2C
-	la x10,R32_GPIOC_CFGLR 				# load pointer x10 with address of R32_GPIOC_CFGLR , I2C SDA & SCL is on portC PC1,PC2
+	la x10,R32_GPIOC_CFGLR 			# load pointer x10 with address of R32_GPIOC_CFGLR , I2C SDA & SCL is on portC PC1,PC2
 	lw x11,0(x10) 					# load contents from register pointed by x10
 	li x7,~((0xf<<12)|(0xf<<16)|(0xf<<20)) 		# clear pc3,pc4,pc5 we need to setup for CS,WR,DATA
 	and x11,x11,x7 					# clear  mode and cnf bits for selected pin C1,C2
@@ -478,34 +454,34 @@ main:
 	sw x11,0(x10) 					# store in R32_GPIOC_CFGLR
 
 	la x10,R32_GPIOC_BSHR 	
-	li x7,((1<<3)|(1<<4))				# start with CS & WR high by setting output PC3,PC4 high
+	li x7,((1<<3)|(1<<4))			# start with CS & WR high by setting output PC3,PC4 high
 	sw x7,0(x10)
 
 
 HT1621_init:
-	# Send System Enable (12 bits)
-	li a0, 0x802    # 100 (ID) + 00000001 (SYS EN) + 0 (Extra)
-	li a1, 12	# number of bits , command 12 bits
-	call ht1621_send_bits
+	# Send System Enable (12 bits COMMAND)
+	li a0, 0x802    				# 100 (ID) + 00000001 (SYS EN) + 0 (Extra)
+	li a1, 12						# number of bits , command 12 bits
+	call ht1621_send_bits			# subroutine to transmit command or DATA , arguments in a0,a1 . a0=command/data a1= number of bits (12=cmd , 17=data)
 
-	li a0, 0x830	# 100 (ID) + 00110000 (RC 256K) + 0 (Extra)
-	li a1, 12
-	call ht1621_send_bits   
+	li a0, 0x830					# 100 (ID) + 00110000 (RC 256K) + 0 (Extra)
+	li a1, 12						# number of bits , command 12 bits
+	call ht1621_send_bits			# subroutine to transmit command or DATA , arguments in a0,a1 . a0=command/data a1= number of bits (12=cmd , 17=data)   
 
-	li a0, 0x852	# 100 (ID) + 01010010 (BIAS 1/3) + 0 (Extra)
-	li a1, 12
-	call ht1621_send_bits 
+	li a0, 0x852					# 100 (ID) + 01010010 (BIAS 1/3) + 0 (Extra)
+	li a1, 12						# number of bits , command 12 bits
+	call ht1621_send_bits			# subroutine to transmit command or DATA , arguments in a0,a1 . a0=command/data a1= number of bits (12=cmd , 17=data) 
 
-	li a0, 0x806	# 100 (ID) + 00000110 (LCD ON) + 0 (Extra)
-	li a1, 12
-	call ht1621_send_bits 
+	li a0, 0x806					# 100 (ID) + 00000110 (LCD ON) + 0 (Extra)
+	li a1, 12						# number of bits , command 12 bits
+	call ht1621_send_bits			# subroutine to transmit command or DATA , arguments in a0,a1 . a0=command/data a1= number of bits (12=cmd , 17=data) 
 
-	call clear_lcd
+	call clear_lcd					# clears LCD display ram of any junk by writing 0 to all addresses
 
 	# Send Digit 8 to Address 0 (17 bits)
-	li a0, 0x1407F  # 101 (ID) + 000000 (Addr) + 01111111 (Pattern)
-	li a1, 17
-	call ht1621_send_bits
+	li a0, 0x1407F  				# 101 (ID) + 000000 (Addr) + 01111111 (Pattern)
+	li a1, 17						# 17 bit transmission for DATA
+	call ht1621_send_bits			# subroutine to transmit command or DATA , arguments in a0,a1 . a0=command/data a1= number of bits (12=cmd , 17=data) 
 
 
 
@@ -524,69 +500,69 @@ here:
 # a0: The bit-stream (e.g., 0x14000 for a 17-bit write)
 # a1: Total number of bits to send (12 or 17)
 ht1621_send_bits:
-    	addi sp, sp, -24
-    	sw ra, 0(sp)
-    	sw s0, 4(sp)
+    addi sp, sp, -24
+    sw ra, 0(sp)
+    sw s0, 4(sp)
 	sw t0, 8(sp)
 	sw t1, 12(sp)
 	sw t2, 16(sp)
 	sw tp, 20(sp)
     
-    	mv s0, a0               # Move bitstream to s0
-    	la t0, R32_GPIOC_BSHR       # GPIOC Base Address
+    mv s0, a0               # Move bitstream to s0
+    la t0, R32_GPIOC_BSHR   # GPIOC Base Address
 
-    	# --- 1. Pull CS LOW (PC3) ---
-    	li t1, (1 << 19)        # Reset Bit 19 (Top 16 bits of BSHR are Reset)
-    	sw t1, 0(t0)         	# Store to BSHR
+    # --- 1. Pull CS LOW (PC3) ---
+    li t1, (1 << 19)        # Reset Bit 19 (Top 16 bits of BSHR are Reset)
+    sw t1, 0(t0)         	# Store to BSHR
 
 bit_loop:
-    	addi a1, a1, -1         # Move to the current bit index
-    	srl t2, s0, a1          # Shift the bit we want into the LSB position
-    	andi t2, t2, 1          # Isolate that bit (0 or 1)
+    addi a1, a1, -1         # Move to the current bit index
+    srl t2, s0, a1          # Shift the bit we want into the LSB position
+    andi t2, t2, 1          # Isolate that bit (0 or 1)
 
-    	# --- 2. Set/Reset DATA (PC5) ---
-    	beqz t2, data_low
-    	li t1, (1 << 5)         # Set Bit 5 (DATA High)
-    	j write_data
+    # --- 2. Set/Reset DATA (PC5) ---
+    beqz t2, data_low
+    li t1, (1 << 5)         # Set Bit 5 (DATA High)
+    j write_data
 data_low:
-    	li t1, (1 << 21)        # Reset Bit 21 (DATA Low)
+    li t1, (1 << 21)        # Reset Bit 21 (DATA Low)
 write_data:
-    	sw t1, 0(t0)         # Write to BSHR
+    sw t1, 0(t0)         	# Write to BSHR
 
-    	# --- 3. Pulse WR Clock (PC4) ---
-    	# Pulse LOW
-    	li t1, (1 << 20)        # Reset Bit 1 (WR Low)
-    	sw t1, 0(t0)
+    # --- 3. Pulse WR Clock (PC4) ---
+    # Pulse LOW
+    li t1, (1 << 20)        # Reset Bit 1 (WR Low)
+    sw t1, 0(t0)
 
-    	# Timing Delay (CH32V003 @ 48MHz needs a tiny pause)
-    	li tp, 10
+    # Timing Delay 
+    li tp, 10
 delay_low: 
 	addi tp, tp, -1
 	bnez tp, delay_low
 
    	# Pulse HIGH (HT1621 latches DATA on this RISING edge)
-    	li t1, (1 << 4)         # Set Bit 1 (WR High)
-    	sw t1, 0(t0)
+    li t1, (1 << 4)         # Set Bit 1 (WR High)
+    sw t1, 0(t0)
 
-    	# Timing Delay
-    	li tp, 10
+    # Timing Delay
+    li tp, 10
 delay_high: 
 	addi tp, tp, -1
 	bnez tp, delay_high
-    	bnez a1, bit_loop       # Continue until all bits are sent
+    bnez a1, bit_loop       # Continue until all bits are sent
 
-    	# --- 4. Pull CS HIGH (PC0) ---
-    	li t1, (1 << 3)         # Set Bit 0 (CS High)
-    	sw t1, 0(t0)
+    # --- 4. Pull CS HIGH (PC0) ---
+    li t1, (1 << 3)         # Set Bit 0 (CS High)
+    sw t1, 0(t0)
 	
 	lw tp, 20(sp)
 	lw t2, 16(sp)
 	lw t1, 12(sp)
 	lw t0, 8(sp)
 	lw s0, 4(sp)
-    	lw ra, 0(sp)
-    	addi sp, sp, 24
-    	ret
+    lw ra, 0(sp)
+    addi sp, sp, 24
+    ret
 
 ##################################
 clear_lcd:
@@ -597,16 +573,16 @@ clear_lcd:
 	sw a0,12(sp)
 	sw a1,16(sp)
 	
-    	li tp, 0                # Current Address
+    li tp, 0                # Current Address (start/0 digit)
 clear_loop:
-    	li a0, 0x14000          # Base 17-bit Write ID
-    	slli gp, tp, 8          # Shift Address into the correct bit position
-    	or a0, a0, gp           # Combine ID + Address (Data is 0)
-    	li a1, 17               # Stream length
-    	call ht1621_send_bits   # Your bit-banging routine
-    	addi tp, tp, 1
-    	li gp, 32
-    	blt tp, gp, clear_loop
+    li a0, 0x14000          # Base 17-bit Write ID
+    slli gp, tp, 8          # Shift Address into the correct bit position
+    or a0, a0, gp           # Combine ID + Address (Data is 0)
+    li a1, 17               # Stream length
+    call ht1621_send_bits   # bit-banging routine to send data or command to LCD
+    addi tp, tp, 1			# increase address
+    li gp, 32				# compare top address to exit loop
+    blt tp, gp, clear_loop	# if less than max address loop
 
 	lw a1,16(sp)
 	lw a0,12(sp)
@@ -711,33 +687,11 @@ loopus:
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ##################################################################################
 .align 4
 .section .rodata
 .global message
 
-message1: .asciz "hello "
-message2: .asciz "hi"
-message3: .asciz "0"
-message7: .asciz "1"	
-name: .asciz "SAJEEV SANKARAN CH32V003 UART"
+
 
 
