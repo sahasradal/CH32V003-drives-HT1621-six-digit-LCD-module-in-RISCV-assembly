@@ -301,7 +301,7 @@
 .equ result2,  0x20000034		# till 9(mem) , 2 bytes in mem1
 .equ dividend , 0x20000038
 .equ divisor, 0x2000003C
-.equ scratchpad, 0x20000040
+.equ DP_STATE, 0x20000040
 .equ last_error, 0x20000044
 .equ state,  0x20000048
 .equ ki_gain, 0x2000004C
@@ -522,10 +522,11 @@ HT1621_init:
 	call delay1S
 	call clear_lcd
 
-	li a0,-10000
+	li a0,-35
 	call SPLIT_DECIMAL_SIGNED
+	call clear_lead_zero_add_DP
 	call refresh_lcd
-
+	
 	call delay1S
 
 
@@ -976,12 +977,24 @@ add_blank:
 	j print_loop
 skip_blank:
 	la gp,DP_STATE
-	lbu tp,0(gp)
-	li t0,1
-	sll t1,
-
-
-
+	lbu gp,0(gp)
+	li tp,1
+	li t0,0
+	la a0,buffer
+dp_loop:
+	lbu t1,0(a0)
+	addi a0,a0,1
+	sll tp,tp,t0		# shift t1 (dp mask) by amount of digit position counter
+	addi t0,t0,1
+	and a1,gp,tp
+	beqz a1,dp_loop 
+	addi a0,a0,-1
+	ori t1,t1,0x80
+	sb t1,0(a0)
+	addi a0,a0,1
+	beq s0,t0,done_dp
+	j dp_loop
+done_dp:
 	lw s0,28(sp)
 	lw t1,24(sp)
 	lw t0,20(sp)
@@ -1000,16 +1013,6 @@ skip_blank:
 
 
 
-
-print_it:
-	# --- Decimal Point Checker ---
-    	la   a4, DP_STATE
-    	lbu  a4, 0(a4)        # Load the mask (e.g., 0x04 for Digit 2)
-    	li   a5, 1
-    	sll  a5, a5, a2       # Create a bitmask for the current digit (t2)
-    	and  a5, a5, a4       # Check if this bit is "ON" in DP_STATE
-    	beqz a5, skip_dp      # If bit is 0, skip
-    	ori  t0, t0, 0x80     # If bit is 1, turn on Segment 8 (Decimal Point)
 
 
 
