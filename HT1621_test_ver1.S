@@ -1,3 +1,5 @@
+
+
 #riscv32-unknown-elf-as -g HT1621_test_ver1.S -o HT1621_test_ver1.O
 #riscv32-unknown-elf-ld -T CH32V003.ld -Map=final.map HT1621_test_ver1.O
 #riscv32-unknown-elf-objcopy -O ihex a.out HT1621_test_ver1.hex
@@ -482,6 +484,11 @@ main:
 	sw x7,0(x10)
 
 
+	la a0,DP_STATE
+	li a1,0x01
+	sw a1,0(a0)
+
+
 HT1621_init:
 	# Send System Enable (12 bits)
 	li a0, 0x802    # 100 (ID) + 00000001 (SYS EN) + 0 (Extra)
@@ -522,7 +529,7 @@ HT1621_init:
 	call delay1S
 	call clear_lcd
 
-	li a0,-35
+	li a0,0
 	call SPLIT_DECIMAL_SIGNED
 	call clear_lead_zero_add_DP
 	call refresh_lcd
@@ -926,26 +933,26 @@ find_num_loop:
 
 place_minus:
     	addi t0, t0, 1     	# Move one slot to the left
-	li   a3, 0x02      	# Font for '-' (Segment G only = 0x02)
+		li   a3, 0x02      	# Font for '-' (Segment G only = 0x02)
     	sb   a3, 0(t0)      	# Overwrite the blank/zero with a minus sign
 
 done_all:
-	lw a4,32(sp)
-	lw a3,28(sp)
-	lw s1,24(sp)
+		lw a4,32(sp)
+		lw a3,28(sp)
+		lw s1,24(sp)
     	lw a1,20(sp)
-	lw gp,16(sp)
-	lw t2,12(sp)
-	lw t1,8(sp)
-	lw t0,4(sp)
-	lw ra,0(sp)
-	addi sp,sp,36
+		lw gp,16(sp)
+		lw t2,12(sp)
+		lw t1,8(sp)
+		lw t0,4(sp)
+		lw ra,0(sp)
+		addi sp,sp,36
     	ret
 
 
 
 clear_lead_zero_add_DP:
-	addi sp,sp,-32
+	addi sp,sp,-36
 	sw ra,0(sp)
 	sw a1,4(sp)
 	sw tp,8(sp)
@@ -954,47 +961,50 @@ clear_lead_zero_add_DP:
 	sw t0,20(sp)
 	sw t1,24(sp)
 	sw s0,28(sp)
-	
-	la a0,buffer
-	la a1,0
-	li tp,0			# flag
+	sw a0,32(sp)
+
+	la a0,buffer		# buffer in SRAM stores the font for display
+	addi a0,a0,5		# increase pointer to 6th digit , we are looking for leading zeros
+	li a1,0			#
+	li tp,0			# flag =1 if non zero digit found
         li gp,5			# last digit indicator
 	li a2,0			# counter
-	li t1,0x7d		#  font 0
-	li s0,6
+	li t1,0x7d		# font '0' HT1621 style
+	li s0,6			# counter limit (6 digits)
 print_loop:
-	lb t0,0(a0)
-	beq a2,gp,skip_blank
-	bnez tp,skip_blank
-	beq t0,t1,add_blank
-	li tp,1
-	j skip_blank
+	lbu t0,0(a0)		# load previously loaded font
+	beq a2,gp,skip_blank	# has the digit counter reached 5 , we keep the 0 in unit place, if 5 skip blanking
+	bnez tp,skip_blank	# has the non zero flag been set, if set skip blank
+	beq t0,t1,add_blank	# if t0 is equal to t1 , both are zero font , branch to add_blank, 0 will be removed and space will be added
+	li tp,1			# if t0 was a non zero font , set flag 1
+	j skip_blank		# skip blanking procedure as we found non zero digit
 add_blank:
-	li t0,0x00
-	sb t0,0(a0)
+	li t0,0x00		# filling 0 will print nothing to show blank space
+	sb t0,0(a0)		# store space in the buffer
 	addi a2,a2,1		# increase counter
-	addi a0,a0,1		# increase display_ram address
-	j print_loop
+	addi a0,a0,-1		# increase display_ram address
+	j print_loop		# loop till all conditions are met
 skip_blank:
-	la gp,DP_STATE
-	lbu gp,0(gp)
-	li tp,1
-	li t0,0
-	la a0,buffer
+	la gp,DP_STATE		# this variable in SRAM holds where decimal point is placed. Possible values 0x0,0x1,0x2,0x4,0x8,0x10
+	lbu gp,0(gp)		# copy decimal point map from DP_STATE
+	li t0,0			# initialize counter to 0
+	la a0,buffer		# point with a0 to buffer
 dp_loop:
-	lbu t1,0(a0)
-	addi a0,a0,1
-	sll tp,tp,t0		# shift t1 (dp mask) by amount of digit position counter
-	addi t0,t0,1
-	and a1,gp,tp
-	beqz a1,dp_loop 
-	addi a0,a0,-1
-	ori t1,t1,0x80
-	sb t1,0(a0)
-	addi a0,a0,1
-	beq s0,t0,done_dp
-	j dp_loop
+	li tp,1			# decimal point mask initialised
+	beq s0,t0,done_dp	# has counter t0 reached s0=6 all 6 possible decimal point locations
+	lbu t1,0(a0)		# load rightmost font from buffer   (eg;6 in 123456)
+	addi a0,a0,1		# pre increase buffer address
+	sll tp,tp,t0		# shift t1 (dp mask) by amount of digit position counter t0, each iteration the 1 in tp will be positioned from 0bit to bit6
+	addi t0,t0,1		# increase counter
+	and a1,gp,tp		# test bit by anding DP_STATE byte with bitmask,if 0 dp not for this bit. if 1 DP is needed here
+	beqz a1,dp_loop 	# if bit test is 0 branch to dp_loop to test next digit/position
+	addi a0,a0,-1		# if bit test pass to non zero, decrease preincreased buffer address to add decimal point 
+	ori t1,t1,0x80		# add DP by OR ing 0x80 to current font in that byte in buffer
+	sb t1,0(a0)		# store back byte to buffer
+	addi a0,a0,1		# increase address of buffer for next font
+	j dp_loop		# loop again till all 6 positions are tested
 done_dp:
+	lw a0,32(sp)
 	lw s0,28(sp)
 	lw t1,24(sp)
 	lw t0,20(sp)
@@ -1003,31 +1013,8 @@ done_dp:
 	lw tp,8(sp)
 	lw a1,4(sp)
 	lw ra,0(sp)
-	addi sp,sp,32
+	addi sp,sp,36
 	ret
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 ##################################################################################
@@ -1041,5 +1028,4 @@ num_table:
     .byte 0x7D, 0x60, 0x3E, 0x7A, 0x63  # 0, 1, 2, 3, 4
     .byte 0x5B, 0x5F, 0x70, 0x7F, 0x7B  # 5, 6, 7, 8, 9
     .byte 0x00                          # Space/Blank
-
 
