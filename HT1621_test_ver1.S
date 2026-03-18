@@ -507,34 +507,26 @@ HT1621_init:
 	li a1, 17
 	call ht1621_send_bits
 
+	call delay1S
+
 	call clear_lcd
 	call delay1S
 
 
-	li a0,0
-	li a1,6
-	call set_digit
- 	li a0,1
-	li a1,5
-	call set_digit
-	li a0,2
-	li a1,4
-	call set_digit
-	li a0,3
-	li a1,' '
-	call set_digit
-	li a0,4
-	li a1,2
-	call set_digit
-	li a0,5
-	li a1,'-'
-	call set_digit
+	li a0,65535
+	call SPLIT_DECIMAL
+	call refresh_lcd
+
 	
+
+	call delay1S
+	call clear_lcd
+
+	li a0,-10000
+	call SPLIT_DECIMAL_SIGNED
 	call refresh_lcd
 
 	call delay1S
-
-	call clear_lcd
 
 
 
@@ -547,9 +539,9 @@ here:
 
 
 
-
-
-
+##########################################################
+#HT1621 ROUTINES
+###########################################################
 # a0: The bit-stream (e.g., 0x14000 for a 17-bit write)
 # a1: Total number of bits to send (12 or 17)
 ht1621_send_bits:
@@ -737,49 +729,48 @@ loopus:
 
 ###########################
 refresh_lcd:
-    addi sp, sp, -28
-    sw ra, 0(sp)
-    sw s0, 4(sp)        # Buffer pointer
-    sw s1, 8(sp)        # Digit counter
-    sw tp, 12(sp)       # Current Write Command (101 + Addr)
-    sw t0,16(sp)
-    sw t1,20(sp)
-    sw t2,24(sp)
+     addi sp, sp, -28
+     sw ra, 0(sp)
+     sw s0, 4(sp)        # Buffer pointer
+     sw s1, 8(sp)        # Digit counter
+     sw tp, 12(sp)       # Current Write Command (101 + Addr)
+     sw t0,16(sp)
+     sw t1,20(sp)
+     sw t2,24(sp)
 
-    la s0, buffer
-    li s1, 0            # Start at Digit 0
-    li tp, 0x14000      # ID: 101, Addr: 00
+     la s0, buffer
+     li s1, 0            # Start at Digit 0
+     li tp, 0x14000      # ID: 101, Addr: 00
 
 refresh_loop:
-    add t0, s0, s1      
-    lbu t1, 0(t0)       # Load segment pattern from buffer
+     add t0, s0, s1      
+     lbu t1, 0(t0)       # Load segment pattern from buffer
 
-    mv a0, tp           # Load ID + Address bits
-    or a0, a0, t1       # Merge the 8-bit segment data
-    li a1, 17           # 17-bit stream
-    call ht1621_send_bits
+     mv a0, tp           # Load ID + Address bits
+     or a0, a0, t1       # Merge the 8-bit segment data
+     li a1, 17           # 17-bit stream
+     call ht1621_send_bits
 
-    addi s1, s1, 1      # Move to next buffer byte
-    addi tp, tp, 0x200  # Increment HT1621 Address by 2 (0x200 = bit 9)
+     addi s1, s1, 1      # Move to next buffer byte
+     addi tp, tp, 0x200  # Increment HT1621 Address by 2 (0x200 = bit 9)
     
-    li t2, 6            # Stop after 6 digits
-    blt s1, t2, refresh_loop
+     li t2, 6            # Stop after 6 digits
+     blt s1, t2, refresh_loop
 
-    lw t2,24(sp)
-    lw t1,20(sp)
-    lw t0,16(sp)
-    lw tp, 12(sp)
-    lw s1, 8(sp)
-    lw s0, 4(sp)
-    lw ra, 0(sp)
-    addi sp, sp, 28
-    ret
+     lw t2,24(sp)
+     lw t1,20(sp)
+     lw t0,16(sp)
+     lw tp, 12(sp)
+     lw s1, 8(sp)
+     lw s0, 4(sp)
+     lw ra, 0(sp)
+     addi sp, sp, 28
+     ret
 ###################################
 #a0= position 0-5, a1 = display number 0-9, loads into buffer
 ####################################
 set_digit:
     addi sp,sp,-20
-
     sw ra,0(sp)
     sw t0,4(sp)
     sw t1,8(sp)
@@ -817,19 +808,7 @@ store_buffer:
     ret
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-############################################################
+##########################################################################
 #TMroutines
 ##########################################################################
 # Input:  x10 = 16-bit value (e.g., 1234)
@@ -843,8 +822,8 @@ SPLIT_DECIMAL:
 	sw t2,12(sp)
 	sw gp,16(sp)
 	sw x11,20(sp)
-	la   t0, DISPLAY_RAM     # Point to the last digit (Units)
-    	addi t0,t0,5		
+	la   t0, buffer     	 # Point to the last digit (Units)
+    	#addi t0,t0,5		
     	li   t1, 6               # Counter for 6 digits
     
 split_loop:
@@ -860,12 +839,13 @@ digit_sub_loop:
 done_sub:
     	# x10 now holds the remainder (the actual digit 0-9)
     	# t2 holds the value to process for the next power of 10
-	la x11,DIGIT_TABLE	# address of table where TM1637 compatible fonts
-	add x11,x11,x10		# Increase address to match number
-	lb x10,0(x11)		# load font
+	la x11,num_table	 # address of table where TM1637 compatible fonts
+	add x11,x11,x10		 # Increase address to match number
+	lb x10,0(x11)		 # load font
     	sb   x10, 0(t0)          # Store digit (font) in buffer
     	mv   x10, t2             # Move quotient to x10 for next loop
-    	addi t0, t0, -1          # Move buffer pointer left
+    	#addi t0, t0, -1          # Move buffer pointer left
+	addi t0, t0, 1   # new
     	addi t1, t1, -1          # Decrement digit counter
     	bnez t1, split_loop
 	lw x11,20(sp)
@@ -878,87 +858,10 @@ done_sub:
     	ret
 
 ############################################################################
-# PRINTS numbers in SRAM display_ram, load BRIGHTNESS &  DP_STATE in SRAM
-###########################################################################
-print_number:
-	addi sp,sp,-48
-	sw ra,0(sp)
-	sw tp,4(sp)
-	sw gp,8(sp)
-	sw t0,12(sp)
-	sw t1,16(sp)
-	sw t2,20(sp)
-	sw a0,24(sp)
-	sw s0,28(sp)
-	sw a1,32(sp)
-	sw a2,36(sp)
-	sw a4,40(sp)
-	sw a5,44(sp)
-	# --- SET FIXED ADDRESS MODE ---
-    	call I2C_START
-    	li x7, 0x44
-    	call I2C_WRITE
-    	call I2C_STOP
-	#----- init print loop-------------
-	la a0,DISPLAY_RAM
-	la a1,ADDR_LUT
-	li tp,0			# flag
-        li gp,5			# last digit indicator
-	li a2,0			# counter
-	li t1,0x3f		# TM font 0
-	li s0,6
-print_loop:
-	lb t0,0(a0)
-	beq a2,gp,print_it
-	bnez tp,print_it
-	beq t0,t1,add_blank
-	li tp,1
-	j print_it
-add_blank:
-	li t0,0
-print_it:
-	# --- Decimal Point Checker ---
-    	la   a4, DP_STATE
-    	lbu  a4, 0(a4)        # Load the mask (e.g., 0x04 for Digit 2)
-    	li   a5, 1
-    	sll  a5, a5, a2       # Create a bitmask for the current digit (t2)
-    	and  a5, a5, a4       # Check if this bit is "ON" in DP_STATE
-    	beqz a5, skip_dp      # If bit is 0, skip
-    	ori  t0, t0, 0x80     # If bit is 1, turn on Segment 8 (Decimal Point)
-skip_dp:
-	lb x7,0(a1)            # load display address from ADDR_LUT
-	call I2C_START
-    	call I2C_WRITE		# write address to TM1673
-	mv x7,t0		# segment in x7(t2) for I2C_WRITE
-	call I2C_WRITE		# write font to TM1673
-	call I2C_STOP	
-	addi a2,a2,1		# increase counter
-	addi a0,a0,1		# increase display_ram address
-	addi a1,a1,1		# increase display address, ADDR_LUT
-	bne a2,s0,print_loop
-	call I2C_START
-	la x7,BRIGHTNESS
-    	lbu x7, 0(x7)           # Display ON, Brightness Level 1
-    	call I2C_WRITE        	# Commit the changes to the LEDs
-    	call I2C_STOP
-	lw a5,44(sp)
-	lw a4,40(sp)
-	lw a2,36(sp)
-	lw a1,32(sp)
-	lw s0,28(sp)
-	lw a0,24(sp)
-	lw t2,20(sp)
-	lw t1,16(sp)
-	lw t0,12(sp)
-	lw gp,8(sp)
-	lw tp,4(sp)
-	lw ra,0(sp)
-	addi sp,sp, 48
-	ret
 
 
 # Input:  x10 = signed 16-bit value (e.g., -123)
-# Output: Writes fonts to DISPLAY_RAM (e.g., blank, blank, -, 1, 2, 3)
+# Output: Writes fonts to buffer & buffer1 in SRAM (six bytes of space)(e.g., blank, blank, -, 1, 2, 3)
 
 SPLIT_DECIMAL_SIGNED:
     	addi sp,sp,-36
@@ -968,19 +871,19 @@ SPLIT_DECIMAL_SIGNED:
 	sw t2,12(sp)
 	sw gp,16(sp)
 	sw a1,20(sp)
-	sw s1,24(sp)        # Save s1 to use as "Negative Flag"
+	sw s1,24(sp)        	 # Save s1 to use as "Negative Flag"
 	sw a3,28(sp)
 	sw a4,32(sp)
 
-    	li s1, 0            # Reset negative flag
-    	bgez x10, start_split # is input negative
-    	li s1, 1            # Set flag: Number is negative
-    	neg x10, x10        # x10 = -x10 (make it positive for the math)
+    	li s1, 0            	 # Reset negative flag
+    	bgez x10, start_split 	 # is input negative
+    	li s1, 1            	 # Set flag: Number is negative
+    	neg x10, x10        	 # x10 = -x10 (make it positive for the math)
 
 start_split:
-    	la   t0, DISPLAY_RAM
-    	addi t0, t0, 5      # Start at units digit
-    	li   t1, 6          # Counter
+    	la   t0, buffer
+    	#addi t0, t0, 5      	 # Start at units digit
+    	li   t1, 6          	 # Counter
 split_loop_signed:
     	li   t2, 0               # This will be our "Quotient" (Current Digit)
     	li   gp, 10              # Divisor
@@ -994,34 +897,36 @@ digit_sub_loop_signed:
 done_sub_signed:
     	# x10 now holds the remainder (the actual digit 0-9)
     	# t2 holds the value to process for the next power of 10
-	la a1,DIGIT_TABLE
+	la a1,num_table
 	add a1,a1,x10
 	lb x10,0(a1)
     	sb   x10, 0(t0)          # Store digit in buffer
     	mv   x10, t2             # Move quotient to x10 for next loop
-    	addi t0, t0, -1          # Move buffer pointer left
+    	#addi t0, t0, -1          # Move buffer pointer left
+	addi t0, t0, 1   # new
     	addi t1, t1, -1          # Decrement digit counter
     	bnez t1, split_loop_signed
   
 	# --- Post-Processing: Insert Negative Sign ---
-    	beqz s1, done_all   # If not negative, we are done
+    	beqz s1, done_all   	 # If not negative, we are done
     
     	# We need to find the first "non-zero" font to place the '-' to its left
-    	la   t0, DISPLAY_RAM
-    	li   t1, 0          # Index
-    	li   t2, 0x3F       # Font for '0'
+    	la   t0, buffer
+	addi t0,t0,5		 # start from left most end	
+    	li   t1, 0          	 # Index
+    	li   t2, 0x7D      	 # Font for '0' = 0x7D
 find_num_loop:
     	lbu  a3, 0(t0)
     	bne  a3, t2, place_minus # If it's NOT '0', place minus at [index - 1]
-    	addi t0, t0, 1
-    	addi t1, t1, 1
-    	li   a4, 5
+    	addi t0, t0, -1		 # decrease buffer address towards right
+    	addi t1, t1, 1		 # increase digit counter
+    	li   a4, 5		 # if less than 5
     	blt  t1, a4, find_num_loop
 
 place_minus:
-    	addi t0, t0, -1     # Move one slot to the left
-    	li   a3, 0x40       # Font for '-' (Segment G only)
-    	sb   a3, 0(t0)      # Overwrite the blank/zero with a minus sign
+    	addi t0, t0, 1     	# Move one slot to the left
+	li   a3, 0x02      	# Font for '-' (Segment G only = 0x02)
+    	sb   a3, 0(t0)      	# Overwrite the blank/zero with a minus sign
 
 done_all:
 	lw a4,32(sp)
@@ -1038,7 +943,73 @@ done_all:
 
 
 
+clear_lead_zero_add_DP:
+	addi sp,sp,-32
+	sw ra,0(sp)
+	sw a1,4(sp)
+	sw tp,8(sp)
+	sw gp,12(sp)
+	sw a2,16(sp)
+	sw t0,20(sp)
+	sw t1,24(sp)
+	sw s0,28(sp)
+	
+	la a0,buffer
+	la a1,0
+	li tp,0			# flag
+        li gp,5			# last digit indicator
+	li a2,0			# counter
+	li t1,0x7d		#  font 0
+	li s0,6
+print_loop:
+	lb t0,0(a0)
+	beq a2,gp,skip_blank
+	bnez tp,skip_blank
+	beq t0,t1,add_blank
+	li tp,1
+	j skip_blank
+add_blank:
+	li t0,0x00
+	sb t0,0(a0)
+	addi a2,a2,1		# increase counter
+	addi a0,a0,1		# increase display_ram address
+	j print_loop
+skip_blank:
+	la gp,DP_STATE
+	lbu tp,0(gp)
+	li t0,1
+	sll t1,
 
+
+
+	lw s0,28(sp)
+	lw t1,24(sp)
+	lw t0,20(sp)
+	lw a2,16(sp)
+	lw gp,12(sp)
+	lw tp,8(sp)
+	lw a1,4(sp)
+	lw ra,0(sp)
+	addi sp,sp,32
+	ret
+
+
+
+
+
+
+
+
+
+print_it:
+	# --- Decimal Point Checker ---
+    	la   a4, DP_STATE
+    	lbu  a4, 0(a4)        # Load the mask (e.g., 0x04 for Digit 2)
+    	li   a5, 1
+    	sll  a5, a5, a2       # Create a bitmask for the current digit (t2)
+    	and  a5, a5, a4       # Check if this bit is "ON" in DP_STATE
+    	beqz a5, skip_dp      # If bit is 0, skip
+    	ori  t0, t0, 0x80     # If bit is 1, turn on Segment 8 (Decimal Point)
 
 
 
@@ -1067,6 +1038,5 @@ num_table:
     .byte 0x7D, 0x60, 0x3E, 0x7A, 0x63  # 0, 1, 2, 3, 4
     .byte 0x5B, 0x5F, 0x70, 0x7F, 0x7B  # 5, 6, 7, 8, 9
     .byte 0x00                          # Space/Blank
-
 
 
