@@ -6,6 +6,11 @@ PC4 = WR of HT1621
 PC5 = DATA of HT1621
 HT1621 runs on 5V.
 
+HT1621_test.S  is basic frame work which sends letter 8 to screen and clear screen
+HT1621_test_ver1.S implements subroutines to send data from a display buffer to the screen,
+subroutine to clear screen, subroutines for sending a 16bit number to screen 0-65535,
+subroutine to send a signed or unsigned number, subroutine to suppress leading zeros and introducing decimal point
+
 
 
 
