@@ -1,5 +1,3 @@
-
-
 #riscv32-unknown-elf-as -g HT1621_test_ver1.S -o HT1621_test_ver1.O
 #riscv32-unknown-elf-ld -T CH32V003.ld -Map=final.map HT1621_test_ver1.O
 #riscv32-unknown-elf-objcopy -O ihex a.out HT1621_test_ver1.hex
@@ -328,27 +326,6 @@
   addi sp, sp, 4
 .endm
 
-.macro pos x y
-  addi sp,sp,-8
-  sw x6,0(sp)
-  sw x7,4(sp)
-  li x6,\y
-  li x7,\x
-  call posi
-  lw x7,4(sp)
-  lw x6,0(sp)
-  addi sp,sp,8
-.endm
-
-.macro string address
-  addi sp,sp,-4
-  sw a2,0(sp)
-  la a2,\address
-  call string_reader
-  lw a2,0(sp)
-  addi sp,sp,4
-.endm
-
 .macro micros val
   addi sp,sp,-4
   sw t1,0(sp)
@@ -446,8 +423,8 @@ start:
     	la t0, vtable			#BASEADDR[31:2],The interrupt vector table base address,which needs to be 1KB aligned
     	ori t0, t0, 3			#BASEADDR[31:2],1: Identify by absolute address,1: Address offset based on interrupt number *4
     	csrrw zero, mtvec,t0		# write t0 mtvec
-   	la t0,main
-	csrw	mepc,t0
+   		la t0,main
+		csrw	mepc,t0
           				#csrw	mepc,t0 :mepc updated with address of main
 	mret
 
@@ -459,19 +436,19 @@ main:
 
 #Enable GPIO clocks & AFIO in APB2 clock register
         
-    	la x10,R32_RCC_APB2PCENR	# load address of APB2PCENR register to x10 ,for enabling GPIO A,D,C peripherals
-	lw x11,0(x10)			# load contents from peripheral register R32_RCC_APB2PCENR pointed by x10
+    la x10,R32_RCC_APB2PCENR	# load address of APB2PCENR register to x10 ,for enabling GPIO A,D,C peripherals
+	lw x11,0(x10)				# load contents from peripheral register R32_RCC_APB2PCENR pointed by x10
 	li x7,((1<<2)|(1<<4)|(1<<5)|(1<<0)|(1<<14)|(1<<9)|(1<<11))	# 1<<IOPA_EN,1<<IOPC_EN,1<<IOPD_EN,1<<AFIOEN,1<<USART ,1<<ADC enable port A,C,D and AFIO functions,1<<TIM1
-	or x11,x11,x7			# or values 
-	sw x11,0(x10)			# store modified enable values in R32_RCC_APB2PCENR
+	or x11,x11,x7				# or values 
+	sw x11,0(x10)				# store modified enable values in R32_RCC_APB2PCENR
 	la x10,R32_RCC_APB1PCENR
 	lw x11,0(x10)
-	ori x11,x11,(1<<0)		# timer2 clock enable
+	ori x11,x11,(1<<0)			# timer2 clock enable
 	sw x11,0(x10)
 
 
 #configure GPIO PortC as multiplex open drain output for I2C
-	la x10,R32_GPIOC_CFGLR 				# load pointer x10 with address of R32_GPIOC_CFGLR , I2C SDA & SCL is on portC PC1,PC2
+	la x10,R32_GPIOC_CFGLR 			# load pointer x10 with address of R32_GPIOC_CFGLR , I2C SDA & SCL is on portC PC1,PC2
 	lw x11,0(x10) 					# load contents from register pointed by x10
 	li x7,~((0xf<<12)|(0xf<<16)|(0xf<<20)) 		# clear pc3,pc4,pc5 we need to setup for CS,WR,DATA
 	and x11,x11,x7 					# clear  mode and cnf bits for selected pin C1,C2
@@ -480,15 +457,11 @@ main:
 	sw x11,0(x10) 					# store in R32_GPIOC_CFGLR
 
 	la x10,R32_GPIOC_BSHR 	
-	li x7,((1<<3)|(1<<4))				# start with CS & WR high by setting output PC3,PC4 high
+	li x7,((1<<3)|(1<<4))			# start with CS & WR high by setting output PC3,PC4 high
 	sw x7,0(x10)
 
 
-	la a0,DP_STATE
-	li a1,0x01
-	sw a1,0(a0)
-
-
+	
 HT1621_init:
 	# Send System Enable (12 bits)
 	li a0, 0x802    # 100 (ID) + 00000001 (SYS EN) + 0 (Extra)
@@ -529,15 +502,24 @@ HT1621_init:
 	call delay1S
 	call clear_lcd
 
-	li a0,0
+		
+	call delay1S
+
+	la a0,DP_STATE
+	li a1,0x01						# load decimal point position , 0 for no decimal, 1,2,4,8,10 are possible combinations			
+	sw a1,0(a0)
+
+	li a0,1
+	li a1,65536
+test_loop:
 	call SPLIT_DECIMAL_SIGNED
 	call clear_lead_zero_add_DP
 	call refresh_lcd
-	
-	call delay1S
-
-
-
+	addi a0,a0,1
+	call delay50ms
+	bne a0,a1,test_loop
+	li a0,0
+	j test_loop
 here:
         j here
 
@@ -737,7 +719,7 @@ loopus:
 
 ###########################
 refresh_lcd:
-     addi sp, sp, -28
+     addi sp, sp, -32
      sw ra, 0(sp)
      sw s0, 4(sp)        # Buffer pointer
      sw s1, 8(sp)        # Digit counter
@@ -745,7 +727,7 @@ refresh_lcd:
      sw t0,16(sp)
      sw t1,20(sp)
      sw t2,24(sp)
-
+     sw a0,28(sp)
      la s0, buffer
      li s1, 0            # Start at Digit 0
      li tp, 0x14000      # ID: 101, Addr: 00
@@ -764,7 +746,7 @@ refresh_loop:
     
      li t2, 6            # Stop after 6 digits
      blt s1, t2, refresh_loop
-
+     lw a0,28(sp)
      lw t2,24(sp)
      lw t1,20(sp)
      lw t0,16(sp)
@@ -772,7 +754,7 @@ refresh_loop:
      lw s1, 8(sp)
      lw s0, 4(sp)
      lw ra, 0(sp)
-     addi sp, sp, 28
+     addi sp, sp, 32
      ret
 ###################################
 #a0= position 0-5, a1 = display number 0-9, loads into buffer
@@ -823,13 +805,14 @@ store_buffer:
 # Output: Writes 6 bytes to DECI_BUF in TM1637 compatible font
 
 SPLIT_DECIMAL:
-	addi sp,sp,-24
+	addi sp,sp,-28
 	sw ra,0(sp)
 	sw t0,4(sp)
 	sw t1,8(sp)
 	sw t2,12(sp)
 	sw gp,16(sp)
 	sw x11,20(sp)
+	sw x10,24(sp)
 	la   t0, buffer     	 # Point to the last digit (Units)
     	#addi t0,t0,5		
     	li   t1, 6               # Counter for 6 digits
@@ -856,13 +839,14 @@ done_sub:
 	addi t0, t0, 1   # new
     	addi t1, t1, -1          # Decrement digit counter
     	bnez t1, split_loop
+	lw x10,24(sp)
 	lw x11,20(sp)
 	lw gp,16(sp)
 	lw t2,12(sp)
 	lw t1,8(sp)
 	lw t0,4(sp)
 	lw ra,0(sp)
-	addi sp,sp,24
+	addi sp,sp,28
     	ret
 
 ############################################################################
@@ -872,7 +856,7 @@ done_sub:
 # Output: Writes fonts to buffer & buffer1 in SRAM (six bytes of space)(e.g., blank, blank, -, 1, 2, 3)
 
 SPLIT_DECIMAL_SIGNED:
-    	addi sp,sp,-36
+    	addi sp,sp,-40
 	sw ra,0(sp)
 	sw t0,4(sp)
 	sw t1,8(sp)
@@ -882,7 +866,7 @@ SPLIT_DECIMAL_SIGNED:
 	sw s1,24(sp)        	 # Save s1 to use as "Negative Flag"
 	sw a3,28(sp)
 	sw a4,32(sp)
-
+	sw a0,36(sp)
     	li s1, 0            	 # Reset negative flag
     	bgez x10, start_split 	 # is input negative
     	li s1, 1            	 # Set flag: Number is negative
@@ -933,20 +917,21 @@ find_num_loop:
 
 place_minus:
     	addi t0, t0, 1     	# Move one slot to the left
-		li   a3, 0x02      	# Font for '-' (Segment G only = 0x02)
+	li   a3, 0x02      	# Font for '-' (Segment G only = 0x02)
     	sb   a3, 0(t0)      	# Overwrite the blank/zero with a minus sign
 
 done_all:
-		lw a4,32(sp)
-		lw a3,28(sp)
-		lw s1,24(sp)
+	lw a0,36(sp)
+	lw a4,32(sp)
+	lw a3,28(sp)
+	lw s1,24(sp)
     	lw a1,20(sp)
-		lw gp,16(sp)
-		lw t2,12(sp)
-		lw t1,8(sp)
-		lw t0,4(sp)
-		lw ra,0(sp)
-		addi sp,sp,36
+	lw gp,16(sp)
+	lw t2,12(sp)
+	lw t1,8(sp)
+	lw t0,4(sp)
+	lw ra,0(sp)
+	addi sp,sp,40
     	ret
 
 
@@ -1017,6 +1002,7 @@ done_dp:
 	ret
 
 
+
 ##################################################################################
 .align 4
 .section .rodata
@@ -1028,4 +1014,10 @@ num_table:
     .byte 0x7D, 0x60, 0x3E, 0x7A, 0x63  # 0, 1, 2, 3, 4
     .byte 0x5B, 0x5F, 0x70, 0x7F, 0x7B  # 5, 6, 7, 8, 9
     .byte 0x00                          # Space/Blank
+
+
+
+
+
+
 
