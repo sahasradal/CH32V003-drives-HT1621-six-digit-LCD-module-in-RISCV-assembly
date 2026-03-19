@@ -7,7 +7,7 @@
 #.\riscv32-unknown-elf-as -g HT1621_test_ver1.S -o HT1621_test_ver1.O
 #.\riscv32-unknown-elf-ld -T CH32V003.ld --Map final.map HT1621_test_ver1.O
 #.\riscv32-unknown-elf-objcopy -O ihex a.out HT1621_test_ver1.hex
-
+#PC3 = CS , PC4 = WR , PC5 = DATA.
 
 .equ SRAM_start, 0x20000000
 .equ SRAM_end, 0x20000800
