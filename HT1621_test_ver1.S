@@ -828,7 +828,7 @@ done_sub:
     	sb   x10, 0(t0)          # Store digit (font) in buffer
     	mv   x10, t2             # Move quotient to x10 for next loop
     	#addi t0, t0, -1          # Move buffer pointer left
-	addi t0, t0, 1   # new
+		addi t0, t0, 1   # new
     	addi t1, t1, -1          # Decrement digit counter
     	bnez t1, split_loop
 		lw x10,24(sp)
