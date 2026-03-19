@@ -277,7 +277,15 @@
 .equ  SYSTICK_CTLR_STCLK, (1<<2)
 .equ  SYSTICK_CTLR_STRE,  (1<<3)
 .equ  SYSTICK_CTLR_SWIE, (1<<31) 
-
+#################################################################
+# HT1621 battery icon and decimal point to be loaded in DP_STATE
+#################################################################
+.equ ICON_DP1,   0x01    # location Digit 0   ,eg 6553.5
+.equ ICON_DP2,   0x02    # location Digit 1   ,eg 655.35
+.equ ICON_DP3,   0x04    # location Digit 2   ,eg 65.535
+.equ ICON_BATT1, 0x08    # Digit 3 (Frame + Low) battery low , use alone in DP_STATE
+.equ ICON_BATT2, 0x10    # Digit 4 (Middle)		 battery medium , use both (ICON_BATT1|ICON_BATT2) in DP_STATE
+.equ ICON_BATT3, 0x20    # Digit 5 (Top)		 battery full, use (ICON_BATT1|ICON_BATT2|ICON_BATT3) in DP_STATE
 
 ###############################
 .equ buffer,   0x20000004
@@ -455,11 +463,6 @@ main:
 	sw x7,0(x10)
 
 
-	la a0,DP_STATE
-	li a1,0x01
-	sw a1,0(a0)
-
-
 HT1621_init:
 	# Send System Enable (12 bits)
 	li a0, 0x802    					# 100 (ID) + 00000001 (SYS EN) + 0 (Extra)
@@ -506,6 +509,12 @@ HT1621_init:
 	#call refresh_lcd
 	
 	call delay1S
+
+
+	la a0,DP_STATE						# place to store decimal point location & battery charge level info , 0,1,2 bits for decimal point , 3,4,5 bits for battery level
+	li a1,ICON_DP1						# ICON_DP1 = 0x01 enable 1st digit decimal point as in 6553.5. 0x02 makes it 655.35 and 0x04 makes it 65.535
+	sw a1,0(a0)
+
 
 	li a0,1								# load start number 1
 	li a1,1000							# load max number
@@ -947,32 +956,32 @@ clear_lead_zero_add_DP:
 
 		la a0,buffer		# buffer in SRAM stores the font for display
 		addi a0,a0,5		# increase pointer to 6th digit , we are looking for leading zeros
-		li a1,0			#
-		li tp,0			# flag =1 if non zero digit found
-        li gp,5			# last digit indicator
-		li a2,0			# counter
-		li t1,0x7d		# font '0' HT1621 style
-		li s0,6			# counter limit (6 digits)
+		li a1,0				#
+		li tp,0				# flag =1 if non zero digit found
+        li gp,5				# last digit indicator
+		li a2,0				# counter
+		li t1,0x7d			# font '0' HT1621 style
+		li s0,6				# counter limit (6 digits)
 print_loop:
 		lbu t0,0(a0)		# load previously loaded font
 		beq a2,gp,skip_blank	# has the digit counter reached 5 , we keep the 0 in unit place, if 5 skip blanking
 		bnez tp,skip_blank	# has the non zero flag been set, if set skip blank
 		beq t0,t1,add_blank	# if t0 is equal to t1 , both are zero font , branch to add_blank, 0 will be removed and space will be added
-		li tp,1			# if t0 was a non zero font , set flag 1
+		li tp,1				# if t0 was a non zero font , set flag 1
 		j skip_blank		# skip blanking procedure as we found non zero digit
 add_blank:
-		li t0,0x00		# filling 0 will print nothing to show blank space
-		sb t0,0(a0)		# store space in the buffer
+		li t0,0x00			# filling 0 will print nothing to show blank space
+		sb t0,0(a0)			# store space in the buffer
 		addi a2,a2,1		# increase counter
 		addi a0,a0,-1		# increase display_ram address
 		j print_loop		# loop till all conditions are met
 skip_blank:
-		la gp,DP_STATE		# this variable in SRAM holds where decimal point is placed. Possible values 0x0,0x1,0x2,0x4,0x8,0x10
+		la gp,DP_STATE		# this variable in SRAM holds where decimal point is placed. Possible values 0x0,0x1,0x2 for DP. bits positions 0x4,0x8,0x10 are for battery charge level icons
 		lbu gp,0(gp)		# copy decimal point map from DP_STATE
-		li t0,0			# initialize counter to 0
+		li t0,0				# initialize counter to 0
 		la a0,buffer		# point with a0 to buffer
 dp_loop:
-		li tp,1			# decimal point mask initialised
+		li tp,1				# decimal point mask initialised
 		beq s0,t0,done_dp	# has counter t0 reached s0=6 all 6 possible decimal point locations
 		lbu t1,0(a0)		# load rightmost font from buffer   (eg;6 in 123456)
 		addi a0,a0,1		# pre increase buffer address
@@ -982,9 +991,9 @@ dp_loop:
 		beqz a1,dp_loop 	# if bit test is 0 branch to dp_loop to test next digit/position
 		addi a0,a0,-1		# if bit test pass to non zero, decrease preincreased buffer address to add decimal point 
 		ori t1,t1,0x80		# add DP by OR ing 0x80 to current font in that byte in buffer
-		sb t1,0(a0)		# store back byte to buffer
+		sb t1,0(a0)			# store back byte to buffer
 		addi a0,a0,1		# increase address of buffer for next font
-		j dp_loop		# loop again till all 6 positions are tested
+		j dp_loop			# loop again till all 6 positions are tested
 done_dp:
 		lw a0,32(sp)
 		lw s0,28(sp)
